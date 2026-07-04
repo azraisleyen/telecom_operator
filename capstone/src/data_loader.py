@@ -45,12 +45,46 @@ def _find(data_dir,name):
             if p.exists(): return p
     raise FileNotFoundError(f'Missing {name}.json(.gz) under {data_dir}/raw or {data_dir}')
 def load_or_build_processed_data(data_dir='capstone/data', rebuild=False, chunksize=100000):
-    data_dir=Path(data_dir); proc=data_dir/'processed'; proc.mkdir(parents=True,exist_ok=True)
-    files={'customer':proc/'customer_clean.parquet','spending':proc/'spending_clean.parquet','complaints':proc/'complaints_flat.parquet','reference':proc/'reference_clean.parquet'}
-    if not rebuild and all(p.exists() for p in files.values()): return {k:pd.read_parquet(v) for k,v in files.items()}
-    customer=read_jsonl_file(_find(data_dir,'customer')); validate_columns(customer,'customer')
-    spending=read_jsonl_file(_find(data_dir,'customer_spending')); validate_columns(spending,'spending')
-    complaints=flatten_complaints(read_jsonl_file(_find(data_dir,'customer_complaints'))); validate_columns(complaints.assign(chat_history=[]),'complaints')
-    reference=read_concatenated_json(_find(data_dir,'reference_material')); validate_columns(reference,'reference')
-    for k,df in [('customer',customer),('spending',spending),('complaints',complaints),('reference',reference)]: save_table(df,files[k])
-    return {'customer':customer,'spending':spending,'complaints':complaints,'reference':reference}
+    data_dir = Path(data_dir)
+    proc = data_dir / 'processed'
+    proc.mkdir(parents=True, exist_ok=True)
+
+    files = {
+        'customer': proc / 'customer_clean.parquet',
+        'spending': proc / 'spending_clean.parquet',
+        'complaints': proc / 'complaints_flat.parquet',
+        'reference': proc / 'reference_clean.parquet',
+    }
+
+    if not rebuild and all(p.exists() for p in files.values()):
+        return {k: pd.read_parquet(v) for k, v in files.items()}
+
+    customer = read_jsonl_file(_find(data_dir, 'customer'))
+    validate_columns(customer, 'customer')
+
+    spending = read_jsonl_file(_find(data_dir, 'customer_spending'))
+    validate_columns(spending, 'spending')
+
+    # Önce raw complaint şeması doğrulanır.
+    # Çünkü flatten_complaints işleminden sonra chat_history kolonu kaldırılır.
+    complaints_raw = read_jsonl_file(_find(data_dir, 'customer_complaints'))
+    validate_columns(complaints_raw, 'complaints')
+    complaints = flatten_complaints(complaints_raw)
+
+    reference = read_concatenated_json(_find(data_dir, 'reference_material'))
+    validate_columns(reference, 'reference')
+
+    for k, df in [
+        ('customer', customer),
+        ('spending', spending),
+        ('complaints', complaints),
+        ('reference', reference),
+    ]:
+        save_table(df, files[k])
+
+    return {
+        'customer': customer,
+        'spending': spending,
+        'complaints': complaints,
+        'reference': reference,
+    }
