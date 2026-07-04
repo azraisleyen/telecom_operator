@@ -22,3 +22,16 @@ bundlekom_results_review.zip
 
 .DS_Store
 Thumbs.db
+# Local caches and app secrets
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.log
+logs/
+.streamlit/secrets.toml
+.vscode/
+.idea/
+mlruns/
+wandb/
