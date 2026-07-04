@@ -10,3 +10,6 @@ def add_friction_v3(df:pd.DataFrame)->pd.DataFrame:
 def export_friction_tables(df,outdir):
     save_table(df['friction_level_v3'].value_counts().rename_axis('friction_level_v3').reset_index(name='complaint_count'),f'{outdir}/tables/friction_v3_distribution.csv')
     save_table(pd.crosstab(df.problem_category,df.friction_level_v3,normalize='index').reset_index(),f'{outdir}/tables/friction_v3_by_category.csv')
+    save_table(pd.DataFrame([{'potential_agent_mismatch_rows':int(df.potential_agent_mismatch.sum()),'potential_agent_mismatch_rate':float(df.potential_agent_mismatch.mean()) if len(df) else 0.0}]),f'{outdir}/tables/potential_agent_mismatch_summary.csv')
+    if 'priority_level' in df:
+        save_table(pd.crosstab(df.priority_level,df.friction_level_v3,normalize='index').reset_index(),f'{outdir}/tables/friction_by_priority.csv')

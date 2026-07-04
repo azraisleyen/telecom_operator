@@ -1,104 +1,132 @@
-# Bundlekom Customer Risk & Resolution Copilot
+# Bundlekom Operator AI Console
 
-Bundlekom Customer Risk & Resolution Copilot, Türk Telekom AI Bootcamp capstone projesi için hazırlanmış açıklanabilir bir müşteri operasyon zekâsı akışıdır. Sistem yalnızca şikâyeti sınıflandırmaz; müşteri yaşam döngüsü, tarihsel gelir değeri, fatura şoku, konuşma sürtünmesi, iş riski, doğru operasyon kuyruğu ve bilgi tabanı kaynaklı yanıtı tek bir karar destek çıktısında birleştirir.
+Bundlekom Customer Risk & Resolution Copilot, Türk Telekom AI Bootcamp capstone projesi için geliştirilen modüler bir telekom müşteri deneyimi ve retention risk platformudur. Sistem tekil beş müşteri kaydını çözmek için değil; bir operatörün tekrar kullanılabilir iş kullanım senaryolarını desteklemek için tasarlanmıştır.
 
-> Önemli: Veri setinde resmi churn etiketi yoktur. Bu nedenle proje “kesin churn” iddiasında bulunmaz; “lifecycle risk”, “no observed billable activity”, “extended no-spending”, “retention risk” ve “churn candidate” dilini kullanır.
+> **Önemli sınırlılık:** Veri setinde resmi churn etiketi yoktur. Bu nedenle proje kesin churn tahmini yaptığını iddia etmez. Dil ve metrikler `retention risk`, `lifecycle risk`, `no observed billable activity`, `extended no-spending`, `churn candidate` ve `proactive retention prioritization` çerçevesinde yorumlanmalıdır.
 
-## Neden sadece chatbot değil?
+## İş problemi
 
-Kontrolsüz bir sohbet botu yerine kaynakları görülebilen, iş kuralları denetlenebilir ve operasyon aksiyonu üreten bir copilot tasarlanmıştır:
+Telekom operatörü her müşteriye aynı anda ulaşamaz. Operasyon ekipleri aşağıdaki sorulara cevap veren, açıklanabilir ve kaynaklı bir karar destek platformuna ihtiyaç duyar:
+
+- Hangi müşteri-ayları yakın gelecekte gözlenen billable activity kaybı açısından risklidir?
+- Hangi şikâyetler hukuki, retention, billing veya teknik eskalasyon gerektirir?
+- Hangi konuşmalarda müşteri kendini tekrar ediyor, yanlış anlaşılıyor veya yüksek friction yaşıyor?
+- Hangi high-value müşteriler proaktif korunmalıdır?
+- Agent’lar bilgi tabanı kaynaklarına dayalı tutarlı Türkçe cevapları nasıl üretebilir?
+
+## Çoklu iş kullanım senaryosu mimarisi
 
 ```text
-Raw JSON/JSONL
+Raw JSON/JSONL/.json.gz
   -> data_loader + preprocessing
   -> lifecycle_status_v2 + bill_shock + complaint_signals
-  -> friction_score_v3 + business_risk_score
-  -> routing + recommended_business_action
-  -> TF-IDF RAG over reference_material
-  -> 5 director-ready demo cases + executive summaries
+  -> repeat_complaint_next_1m/2m + friction_score_v3
+  -> business_risk_score + P0/P1/P2/P3 + routing
+  -> Retention Risk ML customer-month model
+  -> TF-IDF/BM25-ready RAG + optional OpenAI-compatible LLM
+  -> Streamlit Bundlekom Operator AI Console
 ```
 
-## Veri özeti
+## İş kullanım senaryoları
 
-Beklenen ham dosyalar `capstone/data/raw` altında bulunur:
+### 1. Retention Risk ML Model
+
+Model `no_billable_activity_next_2m` hedefini müşteri-ay seviyesinde tahmin eder. Bu hedef kesin churn değildir; sonraki iki ayda gözlenen billable activity olmaması için lifecycle/retention risk sinyalidir.
+
+Modelleme müşteri-şikâyet satırında değil, `customer_id + billing_year_month` seviyesinde yapılır. Complaint count, dominant category, max friction/risk, lifecycle, high-value, bill shock ve geçmiş sinyaller customer-month tablosunda birleştirilir.
+
+Değerlendirme accuracy ile değil operasyonel top-K metrikleriyle yapılır:
+
+- **Precision@Top 1/5/10%:** Operasyonun ulaşabileceği en riskli müşteri segmentinde gerçek target oranını gösterir.
+- **Lift@TopK:** Top segmentin genel popülasyona göre kaç kat daha yoğun risk taşıdığını gösterir.
+- **PR-AUC:** Dengesiz sınıf yapısında ranking kalitesini ölçer.
+- **Revenue Capture@TopK:** Riskli müşteri gelirinin ne kadarının aksiyon listesine girdiğini ölçer.
+- **Brier Score:** Olasılık kalibrasyonunu kontrol eder.
+
+### 2. LLM-Powered RAG Resolution Copilot
+
+TF-IDF retrieval korunur; `rank-bm25` varsa BM25 ile genişletilebilir. RAG, bilgi tabanı dokümanlarını getirir ve LLM açıksa OpenAI-compatible chat client ile kısa, profesyonel, Türkçe ve kaynaklı agent yanıtı üretir.
+
+LLM opsiyoneldir. Ana pipeline LLM anahtarı olmadan çalışır. Kaynak güveni düşükse veya LLM kapalıysa template fallback kullanılır. Yanıtlar `document_id` içermeli veya fallback vermelidir. LLM öncelik, routing, hukuki durum veya churn kararı vermez.
+
+### 3. Risk-Aware Complaint Triage
+
+`business_risk_score`, `business_risk_level`, `priority_level`, `recommended_queue` ve `recommended_business_action` ile şikâyetler P0/P1/P2/P3 olarak önceliklendirilir. Risk bileşenleri ayrı kolonlar halinde tutulur; böylece skor denetlenebilir.
+
+### 4. Friction-Aware Agent Copilot
+
+`friction_score_v3`, `friction_level_v3`, `potential_agent_mismatch`, confirmation prompt ve conversation summary agent’ın müşteriye aynı soruları tekrar sormasını azaltmayı hedefler. Final kararlar eski `friction_level` yerine `friction_level_v3` ile yapılır.
+
+### 5. High-Value Customer Protection
+
+High-value müşteriler tarihsel gelir segmentine göre belirlenir ve lifecycle/risk/friction/retention sinyalleriyle birleştirilerek proaktif koruma listeleri üretilir.
+
+### 6. Unified Operator Console
+
+Streamlit tabanlı `Bundlekom Operator AI Console`, ML, RAG, risk triage, friction assistance, high-value protection, evaluation çıktıları ve temsilî demo örneklerini tek üründe birleştirir.
+
+## Kurulum ve çalıştırma
+
+```bash
+pip install -r capstone/requirements.txt
+python capstone/scripts/run_final_pipeline.py --data-dir capstone/data --output-dir capstone/outputs --rebuild false
+python capstone/scripts/train_retention_model.py --data-dir capstone/data --output-dir capstone/outputs
+python capstone/scripts/evaluate_rag.py --data-dir capstone/data --output-dir capstone/outputs
+streamlit run capstone/app/streamlit_app.py
+```
+
+Ham veri yoksa pipeline doğal olarak veri bulunamadığını bildirir. ML ve RAG evaluation script’leri önce final pipeline çıktılarının üretilmesini bekler.
+
+## Beklenen ham veri
+
+`capstone/data/raw` altında aşağıdaki dosyalar beklenir:
 
 - `customer.json(.gz)`: `customer_id`, `city`, `birth_year`
 - `customer_spending.json(.gz)`: `customer_id`, `billing_year_month`, `bill_amount`, `data_usage`
 - `customer_complaints.json(.gz)`: kategori, alt kategori ve `chat_history`
-- `reference_material.json(.gz)`: ardışık pretty-printed JSON objeleri; JSONL değildir
+- `reference_material.json(.gz)`: ardışık pretty-printed JSON objeleri
 
-Mevcut analiz bulgularına göre tam ölçekte 200K müşteri, 4.32M harcama satırı, 2.16M şikâyet ve 1,000 bilgi tabanı dokümanı vardır. Billing en büyük şikâyet alanıdır; bill shock bağlamsal bir risk sinyalidir fakat aynı ay billing şikâyetini anlamlı şekilde artırdığı iddia edilmez.
+## Ana çıktılar
 
-## Modüller
-
-- `capstone/src/data_loader.py`: JSONL, gzip ve concatenated JSON okuma; complaint flattening; parquet üretimi
-- `capstone/src/preprocessing.py`: Türkçe normalizasyon, ay indeksi, güvenli bölme, tablo kaydetme
-- `capstone/src/lifecycle.py`: `lifecycle_status_v2` ve no-billable-activity odaklı yaşam döngüsü metrikleri
-- `capstone/src/bill_shock.py`: önceki fatura, 3 aylık rolling ortalama, fatura değişimi ve next-2-month no billable activity
-- `capstone/src/complaint_signals.py`: hukuki risk, iptal/retention, billing dispute, teknik kesinti ve v3 konuşma sinyalleri
-- `capstone/src/friction_scoring.py`: eski `friction_level` kullanılmadan `friction_score_v3` ve `friction_level_v3`
-- `capstone/src/risk_scoring.py`: açıklanabilir iş riski ve P0/P1/P2/P3 önceliklendirme
-- `capstone/src/routing.py`: operasyon kuyruğu ve iş aksiyonu önerisi
-- `capstone/src/retrieval.py`: TF-IDF tabanlı, inspectable V1 RAG ve retrieval değerlendirmesi
-- `capstone/src/response_generation.py`: her zaman çalışan template yanıt; opsiyonel, düşük sıcaklıklı ve kaynak kısıtlı LLM modu
-- `capstone/src/demo_cases.py`: tam olarak 5 director-ready demo case üretimi
-- `capstone/src/evaluation.py`: final yönetici özetleri ve tablolar
-
-## Çalıştırma
-
-```bash
-python capstone/scripts/run_final_pipeline.py --data-dir capstone/data --output-dir capstone/outputs --rebuild false
-python capstone/scripts/run_demo_cases.py
-```
-
-`--rebuild true` ham veriden parquet dosyalarını yeniden üretir. Pipeline idempotent tasarlanmıştır; işlenmiş parquet dosyaları varsa tekrar kullanılır.
-
-## Üretilen ana çıktılar
-
-- `capstone/data/processed/customer_clean.parquet`
-- `capstone/data/processed/spending_clean.parquet`
-- `capstone/data/processed/complaints_flat.parquet`
-- `capstone/data/processed/reference_clean.parquet`
 - `capstone/data/processed/complaints_final_features.parquet`
-- `capstone/outputs/tables/business_risk_level_summary.csv`
-- `capstone/outputs/tables/friction_v3_distribution.csv`
-- `capstone/outputs/tables/rag_retrieval_readiness_summary.csv`
+- `capstone/data/processed/customer_month_retention_modeling.parquet`
+- `capstone/models/retention_risk_model.joblib`
+- `capstone/outputs/tables/retention_model_metrics.csv`
+- `capstone/outputs/tables/rag_retrieval_metrics.csv`
+- `capstone/outputs/tables/rag_generation_metrics.csv`
+- `capstone/outputs/tables/risk_component_summary.csv`
+- `capstone/outputs/tables/repeat_complaint_summary.csv`
 - `capstone/outputs/demo_cases/final_demo_cases.json`
-- `capstone/outputs/final/director_demo_cases.md`
 - `capstone/outputs/final/final_executive_summary.md`
 
-## 5 demo case
+## Demo hikâyesi
 
-Pipeline gerçek veri satırlarından şu beş sunum vakasını seçer:
+Demo örnekleri bireysel müşteri kayıtlarıdır; “case” kelimesi burada business use case anlamına gelir. Demo örnekleri şu kullanım senaryolarını temsil eder:
 
-1. Billing escalation / legal or highest billing risk
-2. Technical outage + churn risk
-3. Misunderstood customer / high friction
+1. Billing escalation / plan mismatch or refund / billing risk
+2. Technical outage + retention risk
+3. Misunderstood customer / high friction / potential mismatch
 4. High-value at-risk customer
 5. KB-grounded standard support / self-service
 
-Hukuki anahtar kelime yoksa sistem hukuki vaka uydurmaz; en yüksek riskli gerçek billing escalation satırını seçer.
+## LLM ayarları
 
-## Temel bulgular ve dürüst yorum
+`.env.example` dosyasını `.env` olarak kopyalayabilirsiniz:
 
-- Billing hacim önceliğidir; billing tekrarları operasyonel iyileştirme alanıdır.
-- Friction v3 tek başına churn modeli değildir; konuşma kalitesi, escalation ve senior-agent routing sinyalidir.
-- Business risk score, retention ve müşteri deneyimi aksiyonlarını görünür kılar.
-- High-value at-risk segmenti müşteri yaşam boyu değerini koruma açısından önceliklidir.
-- TF-IDF RAG, V1 için güçlü, hızlı ve açıklanabilir bir kaynak bulma yaklaşımıdır.
-- Kaynak doküman ID’lerinin yanıta eklenmesi yanıt tutarsızlığını azaltır.
+```env
+ENABLE_LLM=false
+OPENAI_API_KEY=
+OPENAI_BASE_URL=
+CHAT_MODEL=
+LLM_TEMPERATURE=0.1
+```
+
+Herhangi bir OpenAI-compatible instruct model kullanılabilir. Kod belirli bir provider veya model dayatmaz.
 
 ## Sınırlılıklar
 
-- Resmi churn etiketi yoktur; model “kesin churn” tahmini yapmaz.
+- Resmi churn etiketi yoktur; model kesin churn tahmini değildir.
 - Bill shock nedensel şikâyet tetikleyicisi olarak yorumlanmaz.
-- Age/city bireysel risk ayrımcılığı için değil, yalnızca agregat deneyim analizi için kullanılmalıdır.
-- Opsiyonel LLM modu baseline için gerekli değildir ve sadece retrieved KB kaynaklarını özetlemek için kullanılmalıdır.
-
-## Gelecek yol haritası
-
-- BM25/embedding retrieval karşılaştırması
-- pgvector veya benzeri vektör indeksleri
-- FastAPI/Streamlit demo arayüzü
-- Zaman penceresi dikkatle tasarlanmış lifecycle risk modeli
-- Agentic RAG yalnızca güçlü guardrail ve kaynak denetimiyle
+- Rule-based risk engine açıklanabilir ancak iş ağırlıkları saha geri bildirimiyle kalibre edilmelidir.
+- LLM opsiyoneldir ve kaynak yoksa fallback kullanmalıdır.
+- Demo örnekleri ürünün tamamı değil, iş kullanım senaryolarının temsilî kayıtlarıdır.
